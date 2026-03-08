@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
-// Make sure this API runs on Node runtime
 export const runtime = "nodejs";
 
-const prisma = new PrismaClient({
-  adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL! }),
+const adapter = new PrismaMariaDb({
+  host: "localhost",
+  port: 3306,
+  user: "u348781095_familyuser",
+  password: process.env.DB_PASSWORD!,
+  database: "u348781095_familyledger",
+  connectionLimit: 5,
 });
+
+const prisma = new PrismaClient({ adapter });
 
 function normalizeNumber(n: string) {
   const s = (n ?? "").trim();
@@ -15,7 +21,6 @@ function normalizeNumber(n: string) {
   return s.padStart(3, "0");
 }
 
-// expects YYYY-MM-DD
 function parseDateOnly(d: string) {
   const s = (d ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
@@ -32,12 +37,19 @@ export async function POST(req: Request) {
   const bazar = String(body?.bazar ?? "").trim();
   const entryDate = parseDateOnly(String(body?.date ?? ""));
 
-  if (!number) return NextResponse.json({ error: "Invalid number" }, { status: 400 });
-  if (!Number.isInteger(amount)) return NextResponse.json({ error: "Amount must be an integer" }, { status: 400 });
-  if (!bazar) return NextResponse.json({ error: "Bazar is required" }, { status: 400 });
-  if (!entryDate) return NextResponse.json({ error: "Date must be YYYY-MM-DD" }, { status: 400 });
+  if (!number) {
+    return NextResponse.json({ error: "Invalid number" }, { status: 400 });
+  }
+  if (!Number.isInteger(amount)) {
+    return NextResponse.json({ error: "Amount must be an integer" }, { status: 400 });
+  }
+  if (!bazar) {
+    return NextResponse.json({ error: "Bazar is required" }, { status: 400 });
+  }
+  if (!entryDate) {
+    return NextResponse.json({ error: "Date must be YYYY-MM-DD" }, { status: 400 });
+  }
 
-  // Find the number in master list and get its familyId
   const numRow = await prisma.number.findUnique({
     where: { number },
     select: { number: true, familyId: true },
@@ -47,7 +59,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Number not found in input sheet" }, { status: 400 });
   }
 
-  // ✅ Save with entryDate + bazar (required by schema)
   const entry = await prisma.entry.create({
     data: {
       number: numRow.number,
@@ -63,7 +74,7 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const date = url.searchParams.get("date"); // YYYY-MM-DD (optional)
+  const date = url.searchParams.get("date");
   const bazar = (url.searchParams.get("bazar") ?? "").trim();
 
   const where: any = {};

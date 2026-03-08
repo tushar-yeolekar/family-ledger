@@ -1,8 +1,21 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PrismaClient } from "@prisma/client";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
 export const runtime = "nodejs";
+
+const adapter = new PrismaMariaDb({
+  host: "localhost",
+  port: 3306,
+  user: "u348781095_familyuser",
+  password: process.env.DB_PASSWORD!,
+  database: "u348781095_familyledger",
+  connectionLimit: 5,
+});
+
+const prisma = new PrismaClient({ adapter });
 
 const prisma = new PrismaClient();
 
