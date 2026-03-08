@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 export const runtime = "nodejs";
 
-const prisma = new PrismaClient({
-  adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL! }),
-});
+const prisma = new PrismaClient();
 
 function dayName(date: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
@@ -33,8 +30,11 @@ function buildSection(
   for (const c of cols) byCol.set(c, []);
 
   for (const r of merged.filter((m) => m.section === section)) {
-    if (byCol.has(r.col)) byCol.get(r.col)!.push({ number: r.number, total: r.total, row: r.row });
+    if (byCol.has(r.col)) {
+      byCol.get(r.col)!.push({ number: r.number, total: r.total, row: r.row });
+    }
   }
+
   for (const c of cols) byCol.get(c)!.sort((a, b) => a.row - b.row);
   return byCol;
 }
@@ -45,27 +45,26 @@ function drawBox(page: any, x: number, y: number, w: number, h: number) {
     y,
     width: w,
     height: h,
-    color: rgb(1, 1, 1),          // white fill
-    borderColor: rgb(0, 0, 0),    // black border
+    color: rgb(1, 1, 1),
+    borderColor: rgb(0, 0, 0),
     borderWidth: 0.7,
   });
 }
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const date = (url.searchParams.get("date") ?? "").trim(); // YYYY-MM-DD
+  const date = (url.searchParams.get("date") ?? "").trim();
   const bazar = (url.searchParams.get("bazar") ?? "").trim();
 
-  // Template layout (fixed)
   const template = await prisma.templatePosition.findMany({
     orderBy: [{ section: "asc" }, { col: "asc" }, { row: "asc" }],
   });
 
-  // number -> familyId
-  const nums = await prisma.number.findMany({ select: { number: true, familyId: true } });
+  const nums = await prisma.number.findMany({
+    select: { number: true, familyId: true },
+  });
   const numberToFamily = new Map(nums.map((n) => [n.number, n.familyId]));
 
-  // filters
   const where: any = {};
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
     const start = new Date(`${date}T00:00:00`);
@@ -74,7 +73,6 @@ export async function GET(req: Request) {
   }
   if (bazar) where.bazar = bazar;
 
-  // totals by family for selected date+bazar
   const familyTotalsRaw = await prisma.entry.groupBy({
     by: ["familyId"],
     where,
@@ -82,7 +80,9 @@ export async function GET(req: Request) {
   });
 
   const familyTotals = new Map<number, number>();
-  for (const t of familyTotalsRaw) familyTotals.set(t.familyId, t._sum.amount ?? 0);
+  for (const t of familyTotalsRaw) {
+    familyTotals.set(t.familyId, t._sum.amount ?? 0);
+  }
 
   const merged: MergedCell[] = template.map((p) => {
     const fam = numberToFamily.get(p.number);
@@ -105,58 +105,39 @@ export async function GET(req: Request) {
   const topRows = Math.max(...topCols.map((c) => top.get(c)?.length ?? 0), 0);
   const bottomRows = Math.max(...bottomCols.map((c) => bottom.get(c)?.length ?? 0), 0);
 
-  // --- ONE PAGE sizing ---
-  // Try A4 first. If too cramped (row height too small), switch to A3.
   const A4: [number, number] = [595.28, 841.89];
-  const A3: [number, number] = [841.89, 1190.55]; // A3 portrait
-
+  const A3: [number, number] = [841.89, 1190.55];
   const margin = 24;
 
   function computeRowHeight(pageSize: [number, number]) {
     const [, height] = pageSize;
-
-    // vertical overhead:
-    // Title + header line + separator + section titles + column headers + spacing
-    const headerBlock = 16 + 22 + 12 + 10; // approx
+    const headerBlock = 16 + 22 + 12 + 10;
     const sectionTitle = 14;
     const colHeader = 16;
     const gapBetween = 10;
 
-    const fixed =
-      headerBlock +
-      sectionTitle + colHeader +
-      gapBetween +
-      sectionTitle + colHeader;
-
+    const fixed = headerBlock + sectionTitle + colHeader + gapBetween + sectionTitle + colHeader;
     const available = height - margin * 2 - fixed;
-
-    // total data rows = max(topRows, bottomRows) but we print both grids separately,
-    // so total data rows = topRows + bottomRows
     const totalDataRows = topRows + bottomRows;
 
     if (totalDataRows <= 0) return 12;
-
     return Math.floor(available / totalDataRows);
   }
 
   let pageSize: [number, number] = A4;
   let rowH = computeRowHeight(pageSize);
 
-  // Minimum readable row height. If below this, switch to A3 for readability.
   if (rowH < 9) {
     pageSize = A3;
     rowH = computeRowHeight(pageSize);
   }
 
-  // Clamp row height so it never becomes absurdly small/large
   rowH = Math.max(7, Math.min(rowH, 14));
 
-  // Font sizes based on row height
   const numFont = Math.max(6, Math.min(9, rowH - 2));
   const headerFont = 10;
   const titleFont = 14;
 
-  // --- PDF drawing ---
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
@@ -165,16 +146,13 @@ export async function GET(req: Request) {
 
   let y = height - margin;
 
-  // Title
   page.drawText("Output Sheet", { x: margin, y, size: titleFont, font });
   y -= 18;
 
-  // Meta line
   const meta = `Date: ${date || "-"}   Day: ${date ? dayName(date) : "-"}   Bazar: ${bazar || "-"}`;
   page.drawText(meta, { x: margin, y, size: headerFont, font });
   y -= 12;
 
-  // Separator
   page.drawLine({
     start: { x: margin, y },
     end: { x: width - margin, y },
@@ -183,14 +161,18 @@ export async function GET(req: Request) {
   });
   y -= 10;
 
-  function drawGridOneSection(title: string, cols: string[], byCol: Map<string, any[]>, rows: number) {
+  function drawGridOneSection(
+    title: string,
+    cols: string[],
+    byCol: Map<string, any[]>,
+    rows: number
+  ) {
     page.drawText(title, { x: margin, y, size: 11, font });
     y -= 12;
 
     const usableWidth = width - margin * 2;
     const colW = usableWidth / cols.length;
 
-    // column headers
     for (let i = 0; i < cols.length; i++) {
       const x = margin + i * colW;
       drawBox(page, x, y - 16, colW, 16);
@@ -219,7 +201,7 @@ export async function GET(req: Request) {
       y -= rowH;
     }
 
-    y -= 8; // gap after section
+    y -= 8;
   }
 
   drawGridOneSection("Top", topCols, top, topRows);

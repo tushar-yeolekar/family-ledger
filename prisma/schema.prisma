@@ -1,5 +1,5 @@
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
 }
 
 generator client {
@@ -22,8 +22,8 @@ model Number {
 
 model TemplatePosition {
   id      Int    @id @default(autoincrement())
-  section String // "top" | "bottom"
-  col     String // "1".."9","0"
+  section String
+  col     String
   row     Int
   number  String
 
