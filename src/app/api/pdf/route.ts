@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { PrismaClient } from "@prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
 export const runtime = "nodejs";
@@ -16,8 +15,6 @@ const adapter = new PrismaMariaDb({
 });
 
 const prisma = new PrismaClient({ adapter });
-
-const prisma = new PrismaClient();
 
 function dayName(date: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
