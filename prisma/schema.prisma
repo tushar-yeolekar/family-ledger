@@ -1,0 +1,50 @@
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Family {
+  id      Int      @id
+  name    String?
+  numbers Number[]
+  entries Entry[]
+}
+
+model Number {
+  number   String  @id
+  familyId Int
+  family   Family  @relation(fields: [familyId], references: [id])
+  entries  Entry[]
+}
+
+model TemplatePosition {
+  id      Int    @id @default(autoincrement())
+  section String // "top" | "bottom"
+  col     String // "1".."9","0"
+  row     Int
+  number  String
+
+  @@unique([section, col, row])
+  @@index([number])
+}
+
+model Entry {
+  id        Int      @id @default(autoincrement())
+  number    String
+  familyId  Int
+  amount    Int
+  entryDate DateTime
+  bazar     String
+  createdAt DateTime @default(now())
+
+  numberRef Number   @relation(fields: [number], references: [number])
+  family    Family   @relation(fields: [familyId], references: [id])
+
+  @@index([number])
+  @@index([familyId])
+  @@index([entryDate])
+  @@index([bazar])
+}
