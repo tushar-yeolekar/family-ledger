@@ -21,8 +21,12 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const date = searchParams.get("date");
 
-    const start = new Date(date!);
-    const end = new Date(date!);
+    if (!date) {
+      return NextResponse.json({ error: "Date required" }, { status: 400 });
+    }
+
+    const start = new Date(date);
+    const end = new Date(date);
     end.setDate(end.getDate() + 1);
 
     const entries = await prisma.entry.findMany({
@@ -42,7 +46,6 @@ export async function GET(req: Request) {
 
     const pdf = await PDFDocument.create();
     const page = pdf.addPage([600, 800]);
-
     const font = await pdf.embedFont(StandardFonts.Helvetica);
 
     page.drawText(`Ledger Output ${date}`, {
@@ -65,13 +68,14 @@ export async function GET(req: Request) {
     }
 
     const bytes = await pdf.save();
+    const pdfBuffer = new Uint8Array(bytes);
 
-    return new NextResponse(bytes, {
+    return new NextResponse(pdfBuffer, {
       headers: {
-        "Content-Type": "application/pdf"
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="output-${date}.pdf"`
       }
     });
-
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "PDF failed" }, { status: 500 });
