@@ -5,57 +5,68 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 export const runtime = "nodejs";
 
 const adapter = new PrismaMariaDb({
-  host: "localhost",
-  port: 3306,
-  user: "u348781095_familyuser",
+  host: process.env.DB_HOST!,
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER!,
   password: process.env.DB_PASSWORD!,
-  database: "u348781095_familyledger",
-  connectionLimit: 5,
+  database: process.env.DB_NAME!,
+  connectionLimit: 1
 });
 
 const prisma = new PrismaClient({ adapter });
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const date = url.searchParams.get("date");
-  const bazar = (url.searchParams.get("bazar") ?? "").trim();
+  try {
+    const { searchParams } = new URL(req.url);
+    const date = searchParams.get("date");
 
-  const template = await prisma.templatePosition.findMany({
-    orderBy: [{ section: "asc" }, { col: "asc" }, { row: "asc" }],
-  });
+    if (!date) {
+      return NextResponse.json({ error: "Date required" }, { status: 400 });
+    }
 
-  const nums = await prisma.number.findMany({
-    select: { number: true, familyId: true },
-  });
-  const numberToFamily = new Map(nums.map((n) => [n.number, n.familyId]));
+    const start = new Date(date);
+    const end = new Date(date);
+    end.setDate(end.getDate() + 1);
 
-  const where: any = {};
-  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const start = new Date(`${date}T00:00:00`);
-    const end = new Date(`${date}T23:59:59.999`);
-    where.entryDate = { gte: start, lte: end };
+    const entries = await prisma.entry.findMany({
+      where: {
+        entryDate: {
+          gte: start,
+          lt: end
+        }
+      }
+    });
+
+    const totals: Record<string, number> = {};
+
+    for (const e of entries) {
+      totals[e.number] = (totals[e.number] || 0) + e.amount;
+    }
+
+    const template = await prisma.templatePosition.findMany({
+      orderBy: [
+        { section: "asc" },
+        { col: "asc" },
+        { row: "asc" }
+      ]
+    });
+
+    const result = template.map(pos => ({
+      id: pos.id,
+      section: pos.section,
+      col: pos.col,
+      row: pos.row,
+      number: pos.number,
+      total: totals[pos.number] || 0
+    }));
+
+    return NextResponse.json({
+      meta: { date },
+      template: result
+    });
+
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Output failed" }, { status: 500 });
   }
-  if (bazar) where.bazar = bazar;
-
-  const familyTotalsRaw = await prisma.entry.groupBy({
-    by: ["familyId"],
-    where,
-    _sum: { amount: true },
-  });
-
-  const familyTotals = new Map<number, number>();
-  for (const t of familyTotalsRaw) {
-    familyTotals.set(t.familyId, t._sum.amount ?? 0);
-  }
-
-  const merged = template.map((p) => {
-    const familyId = numberToFamily.get(p.number);
-    const total = familyId ? (familyTotals.get(familyId) ?? 0) : 0;
-    return { ...p, total };
-  });
-
-  return NextResponse.json({
-    meta: { date: date ?? "", bazar },
-    template: merged,
-  });
 }
